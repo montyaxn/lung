@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::prelude::*;
 use std::str::Chars;
 
-use crate::syntax::Token;
+use crate::syntax::{Token, TokenInfo, TokenKind};
 
 #[cfg(test)]
 mod lexer_test {
@@ -15,6 +15,7 @@ mod lexer_test {
         print!("\n");
     }
 
+    #[test]
     fn test1() {
         let mut lexer = Lexer::from_file("src/test/test.txt").unwrap();
         dump(lexer.lex().unwrap());
@@ -22,17 +23,14 @@ mod lexer_test {
     }
 }
 
-// struct TokenInfo{
-//     s_col : usize,
-//     s_row : usize,
-//     e_col : usize,
-//     e_row : usize,
-// }
-
 struct Eater<'a> {
     input: &'a str,
     input_iter: std::iter::Peekable<Chars<'a>>,
+    was_newline: bool,
     cc: char,
+
+    row: usize,
+    col: usize,
 }
 
 impl<'a> Eater<'a> {
@@ -40,15 +38,30 @@ impl<'a> Eater<'a> {
         Eater {
             input,
             input_iter: input.chars().peekable(),
+            was_newline: false,
             cc: ' ',
+            row: 1,
+            col: 0,
         }
     }
 
     fn next_char(&mut self) {
+        if self.was_newline {
+            self.col = 0;
+            self.row += 1;
+            self.was_newline = false;
+        }
         match self.input_iter.next() {
+            Some('\n') => {
+                self.was_newline = true;
+                self.col += 1;
+                self.cc = '\n';
+            }
             Some(c) => {
+                self.col += 1;
                 self.cc = c;
             }
+
             None => self.cc = '\0',
         }
     }
@@ -62,93 +75,193 @@ impl<'a> Eater<'a> {
         }
     }
 
-    fn eat_alnum_dump(&mut self) -> String {
+    fn eat_alnum_dump(&mut self) -> (String, usize, usize) {
         let mut tmp = String::new();
+        let e_row;
+        let e_col;
         loop {
             if !self.cc.is_alphanumeric() {
+                e_row = self.row;
+                e_col = self.col - 1;
                 break;
             }
             tmp.push(self.cc);
             self.next_char();
         }
-        tmp
+        (tmp, e_row, e_col)
     }
 
-    fn eat_num_dump(&mut self) -> String {
+    fn eat_num_dump(&mut self) -> (String, usize, usize) {
         let mut tmp = String::new();
+        let e_row;
+        let e_col;
         loop {
             if !self.cc.is_numeric() {
+                e_row = self.row;
+                e_col = self.col - 1;
                 break;
             }
             tmp.push(self.cc);
             self.next_char();
         }
-        tmp
+        (tmp, e_row, e_col)
     }
 
     pub fn eat_token_dump(&mut self) -> Result<Token, &str> {
         self.skip_white();
         match self.cc {
             c if c.is_alphabetic() => {
-                let mut tmp = String::new();
-                tmp.push(c);
+                let mut id = String::new();
+                id.push(c);
+                let s_col = self.col;
+                let s_row = self.row;
                 self.next_char();
-                let tmp = format!("{}{}", tmp, self.eat_alnum_dump());
-                match tmp.as_str() {
-                    "fn" => Ok(Token::Func),
-                    "function" => Ok(Token::FuncAnon),
-                    "unit" => Ok(Token::UnitVal),
-                    "Unit" => Ok(Token::UnitType),
-                    _ => Ok(Token::Ident(tmp)),
-                }
+                let (rest, e_row, e_col) = self.eat_alnum_dump();
+                let info = TokenInfo {
+                    s_col,
+                    s_row,
+                    e_col,
+                    e_row,
+                };
+                let id = format!("{}{}", id, rest);
+                let kind = match id.as_str() {
+                    "fn" => TokenKind::Func,
+                    "function" => TokenKind::FuncAnon,
+                    "unit" => TokenKind::UnitVal,
+                    "Unit" => TokenKind::UnitType,
+                    _ => TokenKind::Ident(id),
+                };
+                Ok(Token { kind, info })
             }
 
             c if c.is_numeric() => {
-                let mut tmp = String::new();
-                tmp.push(c);
+                let s_col = self.col;
+                let s_row = self.row;
+                let mut num = String::new();
+                num.push(c);
                 self.next_char();
-                let tmp = format!("{}{}", tmp, self.eat_num_dump());
-                Ok(Token::Num(tmp))
+                let (rest, e_row, e_col) = self.eat_num_dump();
+                let info = TokenInfo {
+                    s_col,
+                    s_row,
+                    e_col,
+                    e_row,
+                };
+                let num = format!("{}{}", num, rest);
+                let kind = TokenKind::Num(num);
+                Ok(Token { kind, info })
             }
 
             '(' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::LParen)
+                Ok(Token {
+                    kind: TokenKind::LParen,
+                    info,
+                })
             }
 
             ')' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::RParen)
+                Ok(Token {
+                    kind: TokenKind::RParen,
+                    info,
+                })
             }
 
             '{' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::RBrace)
+                Ok(Token {
+                    kind: TokenKind::LBrace,
+                    info,
+                })
             }
 
             '}' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::LBrace)
+                Ok(Token {
+                    kind: TokenKind::RBrace,
+                    info,
+                })
             }
 
             ',' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::Comma)
+                Ok(Token {
+                    kind: TokenKind::Comma,
+                    info,
+                })
             }
 
             ':' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::Colon)
+                Ok(Token {
+                    kind: TokenKind::Colon,
+                    info,
+                })
             }
 
             ';' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::SemiColon)
+                Ok(Token {
+                    kind: TokenKind::SemiColon,
+                    info,
+                })
             }
 
             '\0' => {
+                let info = TokenInfo {
+                    s_col: self.col,
+                    s_row: self.row,
+                    e_col: self.col,
+                    e_row: self.row,
+                };
                 self.next_char();
-                Ok(Token::EOF)
+                Ok(Token {
+                    kind: TokenKind::EOF,
+                    info,
+                })
             }
             _ => Err("Error: found unrecognized charactor"),
         }
@@ -172,8 +285,8 @@ impl Lexer {
         let mut eater = Eater::from_str(self.buffer.as_str());
         loop {
             match eater.eat_token_dump() {
-                Ok(t) => match t {
-                    Token::EOF => break,
+                Ok(t) => match t.kind {
+                    TokenKind::EOF => break,
                     _ => tokens.push(t),
                 },
                 Err(s) => {

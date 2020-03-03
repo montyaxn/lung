@@ -1,7 +1,30 @@
 use crate::type_def::*;
 
+#[derive(Debug)]
+pub struct Token {
+    pub kind: TokenKind,
+    pub info: TokenInfo,
+}
+
+#[derive(Debug)]
+pub struct TokenInfo {
+    pub s_col: usize,
+    pub s_row: usize,
+    pub e_col: usize,
+    pub e_row: usize,
+}
+
+impl std::string::ToString for TokenInfo {
+    fn to_string(&self) -> String {
+        String::from(format!(
+            "{}:{}-{}:{}",
+            self.s_row, self.s_col, self.e_row, self.e_col
+        ))
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum Token {
+pub enum TokenKind {
     // symbols
     Func,
     FuncAnon,

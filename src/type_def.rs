@@ -18,6 +18,7 @@ pub enum Type {
     },
 }
 
+#[derive(Debug)]
 pub struct TypedExpr {
     pub expr: Box<Expr>,
     pub expr_type: Option<Type>,

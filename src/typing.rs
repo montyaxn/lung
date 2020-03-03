@@ -8,43 +8,49 @@ use crate::type_def::*;
 mod test_typing {
     use super::*;
 
-    #[test]
-    fn test() {
-        let mut parser = Parser::new(vec![
-            Token::FuncAnon,
-            Token::LParen,
-            Token::Ident(String::from("hello")),
-            Token::Colon,
-            Token::UnitType,
-            Token::Comma,
-            Token::Ident(String::from("hello")),
-            Token::Colon,
-            Token::I32,
-            Token::RParen,
-            Token::Arrow,
-            Token::UnitType,
-            Token::LBrace,
-            Token::Num(String::from("123")),
-            Token::SemiColon,
-            Token::UnitVal,
-            Token::RBrace,
-        ]);
-        let expr = *parser.parse_program().unwrap();
-        expr.into_typed_expr(&mut Context::new()).unwrap();
-    }
+    // #[test]
+    // fn test() {
+    //     let mut parser = Parser::new(vec![
+    //         TokenKind::FuncAnon,
+    //         TokenKind::LParen,
+    //         TokenKind::Ident(String::from("hello")),
+    //         TokenKind::Colon,
+    //         TokenKind::UnitType,
+    //         TokenKind::Comma,
+    //         TokenKind::Ident(String::from("hello")),
+    //         TokenKind::Colon,
+    //         TokenKind::I32,
+    //         TokenKind::RParen,
+    //         TokenKind::Arrow,
+    //         TokenKind::UnitType,
+    //         TokenKind::LBrace,
+    //         TokenKind::Num(String::from("123")),
+    //         TokenKind::SemiColon,
+    //         TokenKind::UnitVal,
+    //         TokenKind::RBrace,
+    //         TokenKind::LParen,
+    //         TokenKind::UnitVal,
+    //         TokenKind::Comma,
+    //         TokenKind::Num(String::from("123")),
+    //         TokenKind::RParen,
+    //     ]);
+    //     let expr = *parser.parse_program().unwrap();
+    //     let typed = expr.into_typed_expr(&mut Context::new()).unwrap();
+    //     println!("{:?}", typed);
+    // }
 }
 
-struct VarTypeTable{
-    table : HashMap<String,Type>,
+struct VarTypeTable {
+    table: HashMap<String, Type>,
 }
 
-impl VarTypeTable{
-    fn get(&self,name : &String) -> Option<&Type>{
+impl VarTypeTable {
+    fn get(&self, name: &String) -> Option<&Type> {
         self.table.get(name)
     }
     pub fn from_args_decl(decls: Vec<ArgDecl>) -> VarTypeTable {
         let mut ret = VarTypeTable {
-            table: HashMap::new()
+            table: HashMap::new(),
         };
         for d in decls {
             ret.table.insert(d.vname, d.vtype);
@@ -54,28 +60,31 @@ impl VarTypeTable{
 }
 
 struct Context {
-    layered_table : Vec<VarTypeTable>,
-    searching_depth : usize,
+    layered_table: Vec<VarTypeTable>,
+    searching_depth: usize,
     visible_bottom: usize,
     visible_top: usize,
 }
 
-impl Context{
-    fn get(&mut self,name : String) -> Result<Type,String>{
-        while self.visible_bottom <= self.searching_depth && self.searching_depth <= self.visible_top {
+impl Context {
+    fn get(&mut self, name: String) -> Result<Type, String> {
+        while self.visible_bottom <= self.searching_depth
+            && self.searching_depth <= self.visible_top
+        {
             match self.layered_table[self.searching_depth].get(&name) {
                 Some(t) => {
                     return Ok(t.clone());
                 }
                 None => {}
             }
-            self.searching_depth-=1
+            self.searching_depth -= 1
         }
         Err(String::from("Could not found variables"))
     }
 
     pub fn push_table_from_argsdecl(&mut self, args_decl: Vec<ArgDecl>) {
-        self.layered_table.push(VarTypeTable::from_args_decl(args_decl));
+        self.layered_table
+            .push(VarTypeTable::from_args_decl(args_decl));
         self.visible_top += 1;
     }
 
@@ -89,16 +98,12 @@ impl Context{
     }
 }
 
-impl Expr{
+impl Expr {
     fn into_typed_expr(self, cxt: &mut Context) -> Result<TypedExpr, String> {
         match &self {
-            Expr::Unit => {
-                Ok(TypedExpr::new(Box::from(self),Some(Type::Unit)))
-            }
-            Expr::I32{val:_} => {
-                Ok(TypedExpr::new(Box::from(self), Some(Type::I32)))
-            }
-            Expr::Var{name} => {
+            Expr::Unit => Ok(TypedExpr::new(Box::from(self), Some(Type::Unit))),
+            Expr::I32 { val: _ } => Ok(TypedExpr::new(Box::from(self), Some(Type::I32))),
+            Expr::Var { name } => {
                 let expr_type = cxt.get(name.clone())?;
                 Ok(TypedExpr::new(Box::from(self), Some(expr_type)))
             }
@@ -106,22 +111,28 @@ impl Expr{
                 let mut last = TypedExpr::new(Box::from(Expr::Unit), Some(Type::Unit));
                 for expr in exprs.clone() {
                     match expr.into_typed_expr(cxt) {
-                        Ok(s) => { last = s }
-                        Err(e) => return Err(e)
+                        Ok(s) => last = s,
+                        Err(e) => return Err(e),
                     }
                 }
                 Ok(last)
             }
-            Expr::AnonFunc { args_decl, ret_decl, block } => {
+            Expr::AnonFunc {
+                args_decl,
+                ret_decl,
+                block,
+            } => {
                 cxt.push_table_from_argsdecl(args_decl.clone());
                 let typed_block = block.clone().into_typed_expr(cxt)?;
                 match typed_block.expr_type {
                     Some(ref t) if *t == *ret_decl => (),
-                    _ => return Err(String::from("Expected but found"))
+                    _ => return Err(String::from("Expected but found")),
                 }
 
-
-                let args = args_decl.iter().map(|x| Box::from(x.clone().vtype)).collect();
+                let args = args_decl
+                    .iter()
+                    .map(|x| Box::from(x.clone().vtype))
+                    .collect();
                 let ret = Box::from(ret_decl.clone());
                 let expr = Box::from(self);
                 let expr_type = Some(Type::Func { args, ret });
@@ -137,9 +148,7 @@ impl Expr{
                         fn_args_ty = args;
                         ret_ty = ret;
                     }
-                    _ => {
-                        return Err(String::from("Error: Callee must have function type"))
-                    }
+                    _ => return Err(String::from("Error: Callee must have function type")),
                 }
 
                 // argsの型を調べる
@@ -148,7 +157,7 @@ impl Expr{
                     let e_to_typedexpr = (*e).into_typed_expr(cxt)?;
                     let e_type = match e_to_typedexpr.expr_type {
                         Some(t) => t,
-                        None => return Err(String::from("型推論実装してねえ"))
+                        None => return Err(String::from("型推論実装してねえ")),
                     };
                     app_args_type.push(e_type);
                 }
@@ -158,35 +167,34 @@ impl Expr{
                 let mut app_args_type = app_args_type.iter();
                 loop {
                     match fn_args_type.next() {
-                        Some(tf) => {
-                            match app_args_type.next() {
-                                Some(ta) => {
-                                    if !(*ta == **tf) {
-                                        return Err(String::from("Expected but"))
-                                    }
-                                }
-                                None => {
-                                    return Err(String::from("The number of the args is expected to be {}"))
+                        Some(tf) => match app_args_type.next() {
+                            Some(ta) => {
+                                if !(*ta == **tf) {
+                                    return Err(String::from("Expected but"));
                                 }
                             }
-                        }
-                        None => {
-                            match app_args_type.next() {
-                                None => {
-                                    break
-                                }
-                                Some(_) => {
-                                    return Err(String::from("The number of the args is expected to be {}"))
-                                }
+                            None => {
+                                return Err(String::from(
+                                    "The number of the args is expected to be {}",
+                                ))
                             }
-                        }
+                        },
+                        None => match app_args_type.next() {
+                            None => break,
+                            Some(_) => {
+                                return Err(String::from(
+                                    "The number of the args is expected to be {}",
+                                ))
+                            }
+                        },
                     }
                 }
-                Ok(TypedExpr { expr: Box::from(self), expr_type: Some(*ret_ty) })
+                Ok(TypedExpr {
+                    expr: Box::from(self),
+                    expr_type: Some(*ret_ty),
+                })
             }
-            _ => {
-                Err(String::from("hello"))
-            }
+            _ => Err(String::from("hello")),
         }
     }
 }

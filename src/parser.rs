@@ -6,42 +6,59 @@ use crate::type_def::*;
 mod parser_test {
     use super::*;
 
-    #[test]
-    fn test() {
-        let mut parser = Parser::new(vec![
-            Token::FuncAnon,
-            Token::LParen,
-            Token::Ident(String::from("hello")),
-            Token::Colon,
-            Token::UnitType,
-            Token::Comma,
-            Token::Ident(String::from("hello")),
-            Token::Colon,
-            Token::I32,
-            Token::RParen,
-            Token::Arrow,
-            Token::UnitType,
-            Token::LBrace,
-            Token::Num(String::from("123")),
-            Token::SemiColon,
-            Token::Num(String::from("123")),
-            Token::RBrace,
-        ]);
-        println!("{:?}", parser.parse_program().unwrap());
-    }
+    // #[test]
+    // fn test() {
+    //     let mut parser = Parser::new(vec![
+    //         TokenKind::FuncAnon,
+    //         TokenKind::LParen,
+    //         TokenKind::Ident(String::from("hello")),
+    //         TokenKind::Colon,
+    //         TokenKind::UnitType,
+    //         TokenKind::Comma,
+    //         TokenKind::Ident(String::from("hello")),
+    //         TokenKind::Colon,
+    //         TokenKind::I32,
+    //         TokenKind::RParen,
+    //         TokenKind::Arrow,
+    //         TokenKind::UnitType,
+    //         TokenKind::LBrace,
+    //         TokenKind::Num(String::from("123")),
+    //         TokenKind::SemiColon,
+    //         TokenKind::Num(String::from("123")),
+    //         TokenKind::RBrace,
+    //     ]);
+    // }
 }
 
 pub struct Parser {
     tokens: std::vec::IntoIter<Token>,
-    ct: Token,
+    ctk: TokenKind,
+    cti: TokenInfo,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Parser {
         Parser {
             tokens: tokens.into_iter(),
-            ct: Token::EOF,
+            ctk: TokenKind::EOF,
+            cti: TokenInfo {
+                s_col: 0,
+                s_row: 0,
+                e_col: 0,
+                e_row: 0,
+            },
         }
+    }
+
+    fn make_error(&mut self, expectation: &str) -> String {
+        // Lung parser use form of Error like the following
+        // Error at [s_row:s_col-e_row:e_col] : Expected ~~
+        let msg = format!(
+            "Error at {} : Expected {}",
+            self.cti.to_string(),
+            expectation
+        );
+        String::from(msg)
     }
 
     pub fn parse_program(&mut self) -> Result<Box<Expr>, String> {
@@ -51,26 +68,29 @@ impl Parser {
 
     fn next_token(&mut self) {
         match self.tokens.next() {
-            Some(Token::EOF) => {
+            Some(Token {
+                kind: TokenKind::EOF,
+                info: _,
+            }) => {
                 self.next_token();
             }
             Some(t) => {
-                self.ct = t;
+                self.ctk = t.kind;
             }
             None => {
-                self.ct = Token::EOF;
+                self.ctk = TokenKind::EOF;
             }
         }
     }
 
-    fn ct_check(&mut self, token: Token) -> bool {
-        match &self.ct {
-            Token::Num(_) => match token {
-                Token::Num(_) => true,
+    fn ct_check(&mut self, token: TokenKind) -> bool {
+        match &self.ctk {
+            TokenKind::Num(_) => match token {
+                TokenKind::Num(_) => true,
                 _ => false,
             },
-            Token::Ident(_) => match token {
-                Token::Ident(_) => true,
+            TokenKind::Ident(_) => match token {
+                TokenKind::Ident(_) => true,
                 _ => false,
             },
             t => t == &token,
@@ -79,22 +99,22 @@ impl Parser {
 
     fn read_args(&mut self) -> Result<Vec<Box<Expr>>, String> {
         let mut tmp = Vec::new();
-        if self.ct == Token::LParen {
+        if self.ctk == TokenKind::LParen {
             self.next_token();
             return Ok(tmp);
         }
         loop {
-            if !Parser::lead_expr(self.ct.clone()) {
-                return Err(String::from("Error: Expected {[EXPR]}"));
+            if !Parser::lead_expr(self.ctk.clone()) {
+                return Err(self.make_error("EXPR"));
             }
             tmp.push(self.read_expr()?);
-            match self.ct {
-                Token::RParen => break,
-                Token::Comma => {
+            match self.ctk {
+                TokenKind::RParen => break,
+                TokenKind::Comma => {
                     self.next_token();
                 }
                 _ => {
-                    return Err(String::from("Error: Expected {[RPAREN],[COMMA]}"));
+                    return Err(self.make_error("[RPAREN,COMMA]"));
                 }
             }
         }
@@ -106,8 +126,8 @@ impl Parser {
         let mut exprs = vec![self.read_expr()?];
 
         loop {
-            match self.ct {
-                Token::SemiColon => {
+            match self.ctk {
+                TokenKind::SemiColon => {
                     self.next_token();
                     exprs.push(match self.read_expr() {
                         Ok(e) => e,
@@ -117,11 +137,11 @@ impl Parser {
                     });
                 }
 
-                Token::RBrace => {
+                TokenKind::RBrace => {
                     self.next_token();
                     break;
                 }
-                _ => return Err(String::from("Error: Expected {';','}'}")),
+                _ => return Err(self.make_error("[SEMICOLON,RBRACE]m")),
             }
         }
         Ok(Box::from(Expr::Block { exprs }))
@@ -130,37 +150,31 @@ impl Parser {
     fn read_args_decl(&mut self) -> Result<Vec<ArgDecl>, String> {
         let mut args_def = Vec::new();
         loop {
-            let vname = match self.ct.clone() {
-                Token::Ident(s) => {
+            let vname = match self.ctk.clone() {
+                TokenKind::Ident(s) => {
                     self.next_token();
                     s
                 }
                 _ => {
-                    return Err(String::from("Expected {[Ident]}"));
+                    return Err(self.make_error("IDENT"));
                 }
             };
-            match self.ct {
-                Token::Colon => self.next_token(),
-                _ => return Err(String::from("Expected {[Colon]}")),
+            match self.ctk {
+                TokenKind::Colon => self.next_token(),
+                _ => return Err(self.make_error("COLON")),
             }
-            let vtype = match self.ct.clone() {
-                Token::Ident(s) => Type::UserType { name: s },
-                Token::I32 => Type::I32,
-                Token::UnitType => Type::Unit,
-                _ => return Err(String::from("Expected {[Ident],[Type]}")),
-            };
-            self.next_token();
+            let vtype = self.read_type()?;
             args_def.push(ArgDecl { vname, vtype });
-            match self.ct {
-                Token::RParen => {
+            match self.ctk {
+                TokenKind::RParen => {
                     self.next_token();
                     break;
                 }
-                Token::Comma => {
+                TokenKind::Comma => {
                     self.next_token();
                 }
                 _ => {
-                    return Err(String::from("Expected {')',','}"));
+                    return Err(self.make_error("[RPAREN,COMMA]"));
                 }
             }
         }
@@ -172,10 +186,10 @@ impl Parser {
         loop {
             let tmp = Box::from(self.read_type()?);
             args.push(tmp);
-            match self.ct {
-                Token::Comma => self.next_token(),
-                Token::RParen => break,
-                _ => return Err(String::from("Expected {[Colon],[RParen]}"))
+            match self.ctk {
+                TokenKind::Comma => self.next_token(),
+                TokenKind::RParen => break,
+                _ => return Err(self.make_error("[COMMA,RPAREN]")),
             }
         }
         self.next_token();
@@ -184,62 +198,66 @@ impl Parser {
 
     fn read_type(&mut self) -> Result<Type, String> {
         let ret;
-        ret = match self.ct.clone() {
-            Token::Ident(name) => {
+        ret = match self.ctk.clone() {
+            TokenKind::Ident(name) => {
                 self.next_token();
                 Type::UserType { name }
             }
-            Token::I32 => {
+            TokenKind::I32 => {
                 self.next_token();
                 Type::I32
             }
-            Token::UnitType => {
+            TokenKind::UnitType => {
                 self.next_token();
                 Type::Unit
             }
-            Token::FuncType => {
-                if !self.ct_check(Token::LParen) {
-                    return Err(String::from("Expected {[LParen]}"))
+            TokenKind::FuncType => {
+                if !self.ct_check(TokenKind::LParen) {
+                    return Err(self.make_error("LPAREN"));
                 }
                 let args = self.read_type_args()?;
                 let ret = Box::from(self.read_type()?);
                 Type::Func { args, ret }
             }
-            _ => { return Err(String::from("Expected {[Type]}")) }
+            _ => return Err(self.make_error("TYPE")),
         };
         Ok(ret)
     }
 
     fn read_ret_decl(&mut self) -> Result<Type, String> {
-        match self.ct {
-            Token::Arrow => { self.next_token() },
-            _ => return Err(String::from("Expected {[Arrow]}"))
+        match self.ctk {
+            TokenKind::Arrow => self.next_token(),
+            _ => return Err(self.make_error("ARROW")),
         }
         Ok(self.read_type()?)
     }
 
     fn read_anon_func(&mut self) -> Result<Box<Expr>, String> {
-        match self.ct {
-            Token::LParen => {
+        match self.ctk {
+            TokenKind::LParen => {
                 self.next_token();
             }
             _ => {
-                return Err(String::from("Expected {[LParen]}"));
+                return Err(self.make_error("LPAREN"));
             }
         }
         let args_decl = self.read_args_decl()?;
         let ret_decl = self.read_ret_decl()?;
-        let block = match self.ct {
-            Token::LBrace => {
+        let block = match self.ctk {
+            TokenKind::LBrace => {
                 self.next_token();
                 self.read_block()?
             }
-            _ => return Err(String::from("Expected {[Block]}")),
+            _ => return Err(self.make_error("BLOCK")),
         };
-        Ok(Box::from(Expr::AnonFunc { args_decl, ret_decl, block }))
+        Ok(Box::from(Expr::AnonFunc {
+            args_decl,
+            ret_decl,
+            block,
+        }))
     }
 
-    fn lead_expr(token: Token) -> bool {
+    fn lead_expr(token: TokenKind) -> bool {
         match token {
             ref t if Parser::lead_simple_expr(t.clone()) => true,
             _ => false,
@@ -248,16 +266,16 @@ impl Parser {
 
     fn read_expr(&mut self) -> Result<Box<Expr>, String> {
         let mut ret_expr: Box<Expr>;
-        match self.ct.clone() {
+        match self.ctk.clone() {
             ref t if Parser::lead_simple_expr(t.clone()) => {
-                ret_expr = self.read_simpl_expr()?;
+                ret_expr = self.read_simple_expr()?;
             }
-            _ => return Err(String::from("Error: Expected {[EXPR]}")),
+            _ => return Err(self.make_error("EXPR")),
         }
 
         loop {
-            match self.ct {
-                Token::LParen => {
+            match self.ctk {
+                TokenKind::LParen => {
                     self.next_token();
                     let args = self.read_args()?;
                     ret_expr = Box::from(Expr::FuncApp {
@@ -274,60 +292,60 @@ impl Parser {
         Ok(ret_expr)
     }
 
-    fn lead_simple_expr(token: Token) -> bool {
+    fn lead_simple_expr(token: TokenKind) -> bool {
         match &token {
-            Token::Num(_) => true,
-            Token::Ident(_) => true,
-            Token::Func => true,
-            Token::FuncAnon => true,
-            Token::LParen => true,
-            Token::RBrace => true,
-            Token::UnitVal => true,
+            TokenKind::Num(_) => true,
+            TokenKind::Ident(_) => true,
+            TokenKind::Func => true,
+            TokenKind::FuncAnon => true,
+            TokenKind::LParen => true,
+            TokenKind::RBrace => true,
+            TokenKind::UnitVal => true,
             _ => false,
         }
     }
 
-    fn read_simpl_expr(&mut self) -> Result<Box<Expr>, String> {
-        let ct = self.ct.clone();
+    fn read_simple_expr(&mut self) -> Result<Box<Expr>, String> {
+        let ct = self.ctk.clone();
         let ret_expr;
         match ct {
-            Token::Num(s) => {
+            TokenKind::Num(s) => {
                 self.next_token();
                 ret_expr = Box::from(Expr::I32 {
                     val: s.parse().unwrap(),
                 });
             }
 
-            Token::Ident(s) => {
+            TokenKind::Ident(s) => {
                 self.next_token();
                 ret_expr = Box::from(Expr::Var { name: s.clone() })
             }
 
-            Token::UnitVal => {
+            TokenKind::UnitVal => {
                 self.next_token();
                 ret_expr = Box::from(Expr::Unit)
             }
 
-            Token::FuncAnon => {
+            TokenKind::FuncAnon => {
                 self.next_token();
                 ret_expr = self.read_anon_func()?;
             }
 
-            Token::LParen => {
+            TokenKind::LParen => {
                 ret_expr = self.read_expr()?;
-                if !self.ct_check(Token::RParen) {
-                    return Err(String::from("Error: Expected {[RPAREN]}"));
+                if !self.ct_check(TokenKind::RParen) {
+                    return Err(self.make_error("RPAREN"));
                 }
                 self.next_token();
             }
 
-            Token::LBrace => {
+            TokenKind::LBrace => {
                 self.next_token();
 
                 ret_expr = self.read_block()?;
             }
 
-            _ => return Err(String::from("Expected {[NUM],[IDENT]}")),
+            _ => return Err(self.make_error("EXPR")),
         }
 
         Ok(ret_expr)
