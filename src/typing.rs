@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use crate::parser::*;
+use crate::lexer::*;
 use crate::syntax::*;
 use crate::type_def::*;
 
@@ -8,36 +9,14 @@ use crate::type_def::*;
 mod test_typing {
     use super::*;
 
-    // #[test]
-    // fn test() {
-    //     let mut parser = Parser::new(vec![
-    //         TokenKind::FuncAnon,
-    //         TokenKind::LParen,
-    //         TokenKind::Ident(String::from("hello")),
-    //         TokenKind::Colon,
-    //         TokenKind::UnitType,
-    //         TokenKind::Comma,
-    //         TokenKind::Ident(String::from("hello")),
-    //         TokenKind::Colon,
-    //         TokenKind::I32,
-    //         TokenKind::RParen,
-    //         TokenKind::Arrow,
-    //         TokenKind::UnitType,
-    //         TokenKind::LBrace,
-    //         TokenKind::Num(String::from("123")),
-    //         TokenKind::SemiColon,
-    //         TokenKind::UnitVal,
-    //         TokenKind::RBrace,
-    //         TokenKind::LParen,
-    //         TokenKind::UnitVal,
-    //         TokenKind::Comma,
-    //         TokenKind::Num(String::from("123")),
-    //         TokenKind::RParen,
-    //     ]);
-    //     let expr = *parser.parse_program().unwrap();
-    //     let typed = expr.into_typed_expr(&mut Context::new()).unwrap();
-    //     println!("{:?}", typed);
-    // }
+    #[test]
+    fn test() {
+        let mut lexer = Lexer::from_file("src/test/test_parser.txt").unwrap();
+        let mut parser = Parser::new(lexer.lex().unwrap());
+        let expr = *parser.parse_program().unwrap();
+        let typed = expr.into_typed_expr(&mut Context::new()).unwrap();
+        println!("{:?}", typed);
+    }
 }
 
 struct VarTypeTable {
@@ -126,7 +105,7 @@ impl Expr {
                 let typed_block = block.clone().into_typed_expr(cxt)?;
                 match typed_block.expr_type {
                     Some(ref t) if *t == *ret_decl => (),
-                    _ => return Err(String::from("Expected but found")),
+                    n => {println!("{:?}",n);return Err(String::from("Expected but found"))}
                 }
 
                 let args = args_decl

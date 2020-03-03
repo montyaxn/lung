@@ -1,0 +1,3 @@
+function(foo:Unit,bar:I32) -> Unit{
+    bar;foo
+}(unit,123)o

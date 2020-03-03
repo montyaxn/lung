@@ -6,28 +6,12 @@ use crate::type_def::*;
 mod parser_test {
     use super::*;
 
-    // #[test]
-    // fn test() {
-    //     let mut parser = Parser::new(vec![
-    //         TokenKind::FuncAnon,
-    //         TokenKind::LParen,
-    //         TokenKind::Ident(String::from("hello")),
-    //         TokenKind::Colon,
-    //         TokenKind::UnitType,
-    //         TokenKind::Comma,
-    //         TokenKind::Ident(String::from("hello")),
-    //         TokenKind::Colon,
-    //         TokenKind::I32,
-    //         TokenKind::RParen,
-    //         TokenKind::Arrow,
-    //         TokenKind::UnitType,
-    //         TokenKind::LBrace,
-    //         TokenKind::Num(String::from("123")),
-    //         TokenKind::SemiColon,
-    //         TokenKind::Num(String::from("123")),
-    //         TokenKind::RBrace,
-    //     ]);
-    // }
+    #[test]
+    fn test() {
+        let mut lexer = Lexer::from_file("src/test/test_parser.txt").unwrap();
+        let mut parser = Parser::new(lexer.lex().unwrap());
+        parser.parse_program().unwrap();
+    }
 }
 
 pub struct Parser {
@@ -76,6 +60,7 @@ impl Parser {
             }
             Some(t) => {
                 self.ctk = t.kind;
+                self.cti = t.info;
             }
             None => {
                 self.ctk = TokenKind::EOF;
@@ -141,7 +126,7 @@ impl Parser {
                     self.next_token();
                     break;
                 }
-                _ => return Err(self.make_error("[SEMICOLON,RBRACE]m")),
+                _ => return Err(self.make_error("[SEMICOLON,RBRACE]")),
             }
         }
         Ok(Box::from(Expr::Block { exprs }))

@@ -18,7 +18,13 @@ mod lexer_test {
     #[test]
     fn test1() {
         let mut lexer = Lexer::from_file("src/test/test.txt").unwrap();
-        dump(lexer.lex().unwrap());
+        // dump(lexer.lex().unwrap());
+        // test with --nocapture arg and see output
+    }
+    #[test]
+    fn test2() {
+        let mut lexer = Lexer::from_file("src/test/test_parser.txt").unwrap();
+        // dump(lexer.lex().unwrap());
         // test with --nocapture arg and see output
     }
 }
@@ -127,8 +133,10 @@ impl<'a> Eater<'a> {
                 let kind = match id.as_str() {
                     "fn" => TokenKind::Func,
                     "function" => TokenKind::FuncAnon,
+                    "Fn" => TokenKind::FuncType,
                     "unit" => TokenKind::UnitVal,
                     "Unit" => TokenKind::UnitType,
+                    "I32" => TokenKind::I32,
                     _ => TokenKind::Ident(id),
                 };
                 Ok(Token { kind, info })
@@ -248,6 +256,22 @@ impl<'a> Eater<'a> {
                     kind: TokenKind::SemiColon,
                     info,
                 })
+            }
+            '-' => {
+                let (s_col,s_row) = (self.col,self.row);
+                self.next_char();
+                let e_col;
+                let e_row;
+                let kind = match self.cc {
+                    '>' => {
+                        e_col = self.col;
+                        e_row = self.row;
+                        self.next_char();
+                        TokenKind::Arrow
+                    }
+                    _ => return Err("いやARROWじゃないんかい！（痛烈な突っ込み）")
+                };
+                Ok(Token{kind,info:TokenInfo{s_col,s_row,e_col,e_row}})
             }
 
             '\0' => {
